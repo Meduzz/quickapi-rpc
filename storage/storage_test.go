@@ -10,15 +10,16 @@ import (
 	"github.com/Meduzz/quickapi-rpc/api"
 	"github.com/Meduzz/quickapi-rpc/errorz"
 	"github.com/Meduzz/quickapi-rpc/storage"
+	"github.com/Meduzz/quickapi/model"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
 type (
 	Test struct {
-		ID   int64  `gorm:"primaryKey,autoIncrement"`
-		Name string `gorm:"size:32" validate:"required"`
-		Age  int    `validate:"min=0,required"`
+		ID       int64  `gorm:"primaryKey,autoIncrement"`
+		FullName string `gorm:"size:32" validate:"required"`
+		Age      int    `validate:"min=0,required"`
 	}
 )
 
@@ -27,8 +28,12 @@ const (
 	defaultAge  = 42
 )
 
+var (
+	_ model.Entity = Test{}
+)
+
 func TestStorage(t *testing.T) {
-	entity := quickapi.NewEntity[Test]("test", quickapi.NewFilter("min", filter))
+	entity := Test{}
 
 	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{})
 
@@ -37,9 +42,17 @@ func TestStorage(t *testing.T) {
 		return
 	}
 
-	db.AutoMigrate(&Test{})
+	err = quickapi.Migrate(db, Test{})
 
-	subject := storage.NewStorage(db, entity)
+	if err != nil {
+		t.Error("Running migration threw error", err)
+	}
+
+	subject, err := storage.NewStorage(db, entity)
+
+	if err != nil {
+		t.Error("creating storage threw error", err)
+	}
 
 	t.Run("create", func(t *testing.T) {
 		cmd := &api.Create{}
@@ -60,8 +73,8 @@ func TestStorage(t *testing.T) {
 				t.Error("result could not be cast to *Test")
 			}
 
-			if test.Name != defaultName || test.Age != defaultAge {
-				t.Errorf("result and expected does not match: name: %s age: %d", test.Name, test.Age)
+			if test.FullName != defaultName || test.Age != defaultAge {
+				t.Errorf("result and expected does not match: name: %s age: %d", test.FullName, test.Age)
 			}
 		})
 
@@ -125,8 +138,8 @@ func TestStorage(t *testing.T) {
 				t.Error("result could not be cast to *Test")
 			}
 
-			if test.Name != defaultName || test.Age != defaultAge {
-				t.Errorf("details does not match: name: %s age: %d", test.Name, test.Age)
+			if test.FullName != defaultName || test.Age != defaultAge {
+				t.Errorf("details does not match: name: %s age: %d", test.FullName, test.Age)
 			}
 		})
 	})
@@ -225,38 +238,38 @@ func TestStorage(t *testing.T) {
 	})
 
 	t.Run("Filters", func(t *testing.T) {
-		cmd := &api.Read{}
-		cmd.ID = "1"
+		cmd := &api.Search{}
 
 		// create a filter that requires age to be > 44
 		cmd.Filters = make(map[string]map[string]string)
 		cmd.Filters["min"] = make(map[string]string)
 		cmd.Filters["min"]["age"] = "44"
 
-		result, err := subject.Read(cmd)
+		result, err := subject.Search(cmd)
 
-		if err == nil {
-			t.Error("there was no error")
+		if err != nil {
+			t.Error("there was an error", err)
 		}
 
-		if result != nil {
-			t.Error("there was a match...")
+		if result == nil {
+			t.Error("there was no data")
 		}
 
-		expected := &errorz.ErrorDTO{}
-		if !errors.As(err, &expected) {
-			t.Error("error was not of type ErrorDTO")
+		results, ok := result.([]*Test)
+
+		if !ok {
+			t.Error("result was not []*Test")
 		}
 
-		if expected.Code != "GENERIC" {
-			t.Errorf("error code was not GENERIC but %s", expected.Code)
+		if len(results) > 0 {
+			t.Error("result had rows")
 		}
 	})
 }
 
 func createTest(name string, age int) []byte {
 	it := &Test{}
-	it.Name = name
+	it.FullName = name
 	it.Age = age
 
 	return serialize(it)
@@ -270,23 +283,44 @@ func serialize(test *Test) []byte {
 
 func createTestData(db *gorm.DB) (*Test, error) {
 	data := &Test{
-		Name: defaultName,
-		Age:  defaultAge,
+		FullName: defaultName,
+		Age:      defaultAge,
 	}
 
-	err := db.Model(data).Save(data).Error
+	err := db.Table(Test{}.Name()).Save(data).Error
 
 	return data, err
 }
 
-func filter(filters map[string]string) func(*gorm.DB) *gorm.DB {
-	return func(db *gorm.DB) *gorm.DB {
-		min, ok := filters["age"]
+func (t Test) Name() string {
+	return "test"
+}
 
-		if !ok {
-			return db
-		}
+func (t Test) Kind() model.EntityKind {
+	return model.NormalKind
+}
 
-		return db.Where("Age > ?", min)
+func (t Test) Create() any {
+	return &Test{}
+}
+
+func (t Test) CreateArray() any {
+	return make([]*Test, 0)
+}
+
+func (t Test) Scopes() []*model.NamedFilter {
+	return []*model.NamedFilter{
+		model.NewFilter("min", func(filters map[string]string) model.Hook {
+			return func(db *gorm.DB) *gorm.DB {
+				min, ok := filters["age"]
+
+				if !ok {
+					return db
+				}
+
+				return db.Where("Age > ?", min)
+			}
+		},
+		),
 	}
 }

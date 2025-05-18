@@ -3,25 +3,32 @@ package storage
 import (
 	"encoding/json"
 
-	"github.com/Meduzz/quickapi"
 	"github.com/Meduzz/quickapi-rpc/api"
 	"github.com/Meduzz/quickapi-rpc/errorz"
+	qapi "github.com/Meduzz/quickapi/api"
+	"github.com/Meduzz/quickapi/model"
+	"github.com/Meduzz/quickapi/storage"
 	"github.com/go-playground/validator/v10"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 type (
 	QuickStorage struct {
-		entity   quickapi.Entity
-		db       *gorm.DB
+		entity   model.Entity
 		validate *validator.Validate
+		storage  storage.Storage
 	}
 )
 
-func NewStorage(db *gorm.DB, entity quickapi.Entity) *QuickStorage {
+func NewStorage(db *gorm.DB, entity model.Entity) (*QuickStorage, error) {
 	v := validator.New(validator.WithRequiredStructEnabled())
-	return &QuickStorage{entity, db, v}
+	store, err := storage.CreateStorage(db, entity)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &QuickStorage{entity, v, store}, nil
 }
 
 func (s *QuickStorage) Create(c *api.Create) (any, error) {
@@ -38,7 +45,9 @@ func (s *QuickStorage) Create(c *api.Create) (any, error) {
 		return nil, errorz.CreateError(errorz.CodeBadInput, err)
 	}
 
-	err = s.db.Create(e).Error
+	req := qapi.NewCreate(e)
+
+	e, err = s.storage.Create(req)
 
 	if err != nil {
 		return nil, errorz.CreateError(errorz.CodeGeneric, err)
@@ -48,16 +57,9 @@ func (s *QuickStorage) Create(c *api.Create) (any, error) {
 }
 
 func (s *QuickStorage) Read(r *api.Read) (any, error) {
-	e := s.entity.Create()
-	query := s.db
+	req := qapi.NewRead(r.ID, r.Preload)
 
-	scopes := createScopes(r.Filters, s.entity.Filters())
-
-	if scopes != nil {
-		query = query.Scopes(scopes...)
-	}
-
-	err := query.First(e, r.ID).Error
+	e, err := s.storage.Read(req)
 
 	if err != nil {
 		return nil, errorz.CreateError(errorz.CodeGeneric, err)
@@ -80,14 +82,9 @@ func (s *QuickStorage) Update(u *api.Update) (any, error) {
 		return nil, errorz.CreateError(errorz.CodeBadInput, err)
 	}
 
-	query := s.db.Session(&gorm.Session{FullSaveAssociations: true})
-	scopes := createScopes(u.Filters, s.entity.Filters())
+	req := qapi.NewUpate(u.ID, e)
 
-	if scopes != nil {
-		query = query.Scopes(scopes...)
-	}
-
-	err = query.Save(e).Error
+	e, err = s.storage.Update(req)
 
 	if err != nil {
 		return nil, errorz.CreateError(errorz.CodeGeneric, err)
@@ -97,15 +94,9 @@ func (s *QuickStorage) Update(u *api.Update) (any, error) {
 }
 
 func (s *QuickStorage) Delete(d *api.Delete) error {
-	e := s.entity.Create()
-	query := s.db.Select(clause.Associations)
-	scopes := createScopes(d.Filters, s.entity.Filters())
+	req := qapi.NewDelete(d.ID)
 
-	if scopes != nil {
-		query = query.Scopes(scopes...)
-	}
-
-	err := query.Delete(e, d.ID).Error
+	err := s.storage.Delete(req)
 
 	if err != nil {
 		return errorz.CreateError(errorz.CodeGeneric, err)
@@ -115,23 +106,17 @@ func (s *QuickStorage) Delete(d *api.Delete) error {
 }
 
 func (s *QuickStorage) Search(c *api.Search) (any, error) {
-	data := s.entity.CreateArray()
+	hooks := make([]model.Hook, 0)
 
-	query := s.db.
-		Offset(c.Skip).
-		Limit(c.Take)
+	scopeSupport, ok := s.entity.(model.ScopeSupport)
 
-	if len(c.Where) > 0 {
-		query = query.Where(c.Where)
+	if ok {
+		hooks = createScopes(c.Filters, scopeSupport.Scopes())
 	}
 
-	scopes := createScopes(c.Filters, s.entity.Filters())
+	req := qapi.NewSearch(c.Skip, c.Take, c.Where, c.Sort, c.Preload, hooks)
 
-	if scopes != nil {
-		query = query.Scopes(scopes...)
-	}
-
-	err := query.Find(&data).Error
+	data, err := s.storage.Search(req)
 
 	if err != nil {
 		return nil, errorz.CreateError(errorz.CodeGeneric, err)
@@ -141,24 +126,9 @@ func (s *QuickStorage) Search(c *api.Search) (any, error) {
 }
 
 func (s *QuickStorage) Patch(p *api.Patch) (any, error) {
-	e := s.entity.Create()
+	req := qapi.NewPatch(p.ID, p.Data, p.Preload)
 
-	err := s.db.Model(e).
-		Where("id = ?", p.ID).
-		Updates(p.Data).Error
-
-	if err != nil {
-		return nil, errorz.CreateError(errorz.CodeGeneric, err)
-	}
-
-	query := s.db
-	scopes := createScopes(p.Filters, s.entity.Filters())
-
-	if scopes != nil {
-		query = query.Scopes(scopes...)
-	}
-
-	err = query.Find(e, p.ID).Error
+	e, err := s.storage.Patch(req)
 
 	if err != nil {
 		return nil, errorz.CreateError(errorz.CodeGeneric, err)
@@ -167,15 +137,15 @@ func (s *QuickStorage) Patch(p *api.Patch) (any, error) {
 	return e, nil
 }
 
-func createScopes(data map[string]map[string]string, filters []*quickapi.NamedFilter) []func(*gorm.DB) *gorm.DB {
+func createScopes(input map[string]map[string]string, filters []*model.NamedFilter) []model.Hook {
 	if len(filters) == 0 {
 		return nil
 	}
 
-	scopes := make([]func(*gorm.DB) *gorm.DB, 0)
+	scopes := []model.Hook{}
 
 	for _, filter := range filters {
-		data, ok := data[filter.Name]
+		data, ok := input[filter.Name]
 
 		if ok {
 			scopes = append(scopes, filter.Scope(data))
