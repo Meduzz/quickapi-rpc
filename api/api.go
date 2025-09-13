@@ -13,12 +13,14 @@ type (
 	}
 
 	Update struct {
-		ID     string          `json:"id"`
-		Entity json.RawMessage `json:"entity"`
+		ID     string                       `json:"id"`
+		Entity json.RawMessage              `json:"entity"`
+		Hooks  map[string]map[string]string `json:"hooks,omitempty"`
 	}
 
 	Delete struct {
-		ID string `json:"id"`
+		ID    string                       `json:"id"`
+		Hooks map[string]map[string]string `json:"hooks,omitempty"`
 	}
 
 	Search struct {
@@ -27,12 +29,13 @@ type (
 		Where   map[string]string            `json:"where,omitempty"`
 		Sort    map[string]string            `json:"sort,omitempty"`
 		Preload map[string]string            `json:"preload,omitempty"`
-		Filters map[string]map[string]string `json:"filters,omitempty"`
+		Hooks   map[string]map[string]string `json:"hooks,omitempty"`
 	}
 
 	Patch struct {
-		ID      string            `json:"id"`
-		Data    map[string]any    `json:"data"`
-		Preload map[string]string `json:"preload,omitempty"`
+		ID      string                       `json:"id"`
+		Data    map[string]any               `json:"data"`
+		Preload map[string]string            `json:"preload,omitempty"`
+		Hooks   map[string]map[string]string `json:"hooks,omitempty"`
 	}
 )

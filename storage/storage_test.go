@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/Meduzz/helper/http/herror"
 	"github.com/Meduzz/quickapi"
 	"github.com/Meduzz/quickapi-rpc/api"
 	"github.com/Meduzz/quickapi-rpc/errorz"
@@ -29,7 +30,8 @@ const (
 )
 
 var (
-	_ model.Entity = Test{}
+	_ model.Entity       = Test{}
+	_ model.ScopeSupport = Test{}
 )
 
 func TestStorage(t *testing.T) {
@@ -237,33 +239,119 @@ func TestStorage(t *testing.T) {
 		})
 	})
 
-	t.Run("Filters", func(t *testing.T) {
-		cmd := &api.Search{}
+	t.Run("Hooks", func(t *testing.T) {
+		t.Run("Search", func(t *testing.T) {
+			cmd := &api.Search{}
 
-		// create a filter that requires age to be > 44
-		cmd.Filters = make(map[string]map[string]string)
-		cmd.Filters["min"] = make(map[string]string)
-		cmd.Filters["min"]["age"] = "44"
+			// create a filter that requires age to be > 44
+			cmd.Hooks = make(map[string]map[string]string)
+			cmd.Hooks["min"] = make(map[string]string)
+			cmd.Hooks["min"]["age"] = "44"
 
-		result, err := subject.Search(cmd)
+			result, err := subject.Search(cmd)
 
-		if err != nil {
-			t.Error("there was an error", err)
-		}
+			if err != nil {
+				t.Error("there was an error", err)
+			}
 
-		if result == nil {
-			t.Error("there was no data")
-		}
+			if result == nil {
+				t.Error("there was no data")
+			}
 
-		results, ok := result.([]*Test)
+			results, ok := result.([]*Test)
 
-		if !ok {
-			t.Error("result was not []*Test")
-		}
+			if !ok {
+				t.Error("result was not []*Test")
+			}
 
-		if len(results) > 0 {
-			t.Error("result had rows")
-		}
+			if len(results) > 0 {
+				t.Error("result had rows")
+			}
+		})
+
+		t.Run("Update", func(t *testing.T) {
+			it, err := createTestData(db)
+
+			if err != nil {
+				t.Errorf("error creating testdata: %v", err)
+			}
+
+			it.Age = 18
+
+			cmd := &api.Update{}
+
+			cmd.ID = fmt.Sprintf("%d", it.ID)
+			cmd.Entity = serialize(it)
+			cmd.Hooks = make(map[string]map[string]string)
+			cmd.Hooks["min"] = make(map[string]string)
+			cmd.Hooks["min"]["age"] = "43"
+
+			result, err := subject.Update(cmd)
+
+			if err != nil {
+				if err == herror.ErrConflict {
+					t.Errorf("update threw wrong error: %v", err)
+				}
+			}
+
+			if result != nil {
+				t.Errorf("result was not nil")
+			}
+		})
+
+		t.Run("Delete", func(t *testing.T) {
+			it, err := createTestData(db)
+
+			if err != nil {
+				t.Errorf("error creating testdata: %v", err)
+			}
+
+			cmd := &api.Delete{}
+
+			cmd.ID = fmt.Sprintf("%d", it.ID)
+			cmd.Hooks = make(map[string]map[string]string)
+			cmd.Hooks["min"] = make(map[string]string)
+			cmd.Hooks["min"]["age"] = "43"
+
+			err = subject.Delete(cmd)
+
+			if err != nil {
+				if err == herror.ErrConflict {
+					t.Errorf("update threw wrong error: %v", err)
+				}
+			}
+		})
+
+		t.Run("Patch", func(t *testing.T) {
+			it, err := createTestData(db)
+
+			if err != nil {
+				t.Errorf("error creating testdata: %v", err)
+			}
+
+			cmd := &api.Patch{}
+
+			cmd.ID = fmt.Sprintf("%d", it.ID)
+			cmd.Data = make(map[string]any)
+			cmd.Data["age"] = 18
+
+			cmd.Hooks = make(map[string]map[string]string)
+			cmd.Hooks["min"] = make(map[string]string)
+			cmd.Hooks["min"]["age"] = "43"
+
+			result, err := subject.Patch(cmd)
+
+			if err != nil {
+				if err == herror.ErrConflict {
+					t.Errorf("update threw wrong error: %v", err)
+				}
+			}
+
+			if result != nil {
+				t.Errorf("result was not nil")
+			}
+		})
+
 	})
 }
 
