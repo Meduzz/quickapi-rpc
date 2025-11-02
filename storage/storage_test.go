@@ -50,11 +50,7 @@ func TestStorage(t *testing.T) {
 		t.Error("Running migration threw error", err)
 	}
 
-	subject, err := storage.NewStorage(db, entity)
-
-	if err != nil {
-		t.Error("creating storage threw error", err)
-	}
+	subject := storage.NewStorage(db, entity)
 
 	t.Run("create", func(t *testing.T) {
 		cmd := &api.Create{}
@@ -382,10 +378,6 @@ func createTestData(db *gorm.DB) (*Test, error) {
 
 func (t Test) Name() string {
 	return "test"
-}
-
-func (t Test) Kind() model.EntityKind {
-	return model.NormalKind
 }
 
 func (t Test) Create() any {

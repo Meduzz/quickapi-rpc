@@ -56,16 +56,12 @@ func Run(db *gorm.DB, prefix string, entities ...model.Entity) error {
 
 func For(db *gorm.DB, conn *nats.Conn, codec encoding.Codec, prefix string, entity model.Entity) error {
 	topicer := topic(prefix, entity.Name())
-	storage, err := storage.NewStorage(db, entity)
-
-	if err != nil {
-		return err
-	}
+	storage := storage.NewStorage(db, entity)
 
 	handler := NewHandler(storage)
 
 	create := topicer("create")
-	_, err = rpc.HandleRPC(conn, codec, create, entity.Name(), handler.Create)
+	_, err := rpc.HandleRPC(conn, codec, create, entity.Name(), handler.Create)
 
 	if err != nil {
 		return err

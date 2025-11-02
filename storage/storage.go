@@ -20,15 +20,11 @@ type (
 	}
 )
 
-func NewStorage(db *gorm.DB, entity model.Entity) (*QuickStorage, error) {
+func NewStorage(db *gorm.DB, entity model.Entity) *QuickStorage {
 	v := validator.New(validator.WithRequiredStructEnabled())
-	store, err := storage.CreateStorage(db, entity)
+	store := storage.CreateStorage(db, entity)
 
-	if err != nil {
-		return nil, err
-	}
-
-	return &QuickStorage{entity, v, store}, nil
+	return &QuickStorage{entity, v, store}
 }
 
 func (s *QuickStorage) Create(c *api.Create) (any, error) {
