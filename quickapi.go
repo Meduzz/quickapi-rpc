@@ -55,48 +55,48 @@ func Run(db *gorm.DB, prefix string, entities ...model.Entity) error {
 }
 
 func For(db *gorm.DB, conn *nats.Conn, codec encoding.Codec, prefix string, entity model.Entity) error {
-	topicer := topic(prefix, entity.Name())
+	topicer := topic(prefix, entity.Table())
 	storage := storage.NewStorage(db, entity)
 
 	handler := NewHandler(storage)
 
 	create := topicer("create")
-	_, err := rpc.HandleRPC(conn, codec, create, entity.Name(), handler.Create)
+	_, err := rpc.HandleRPC(conn, codec, create, entity.Table(), handler.Create)
 
 	if err != nil {
 		return err
 	}
 
 	read := topicer("read")
-	_, err = rpc.HandleRPC(conn, codec, read, entity.Name(), handler.Read)
+	_, err = rpc.HandleRPC(conn, codec, read, entity.Table(), handler.Read)
 
 	if err != nil {
 		return err
 	}
 
 	update := topicer("update")
-	_, err = rpc.HandleRPC(conn, codec, update, entity.Name(), handler.Update)
+	_, err = rpc.HandleRPC(conn, codec, update, entity.Table(), handler.Update)
 
 	if err != nil {
 		return err
 	}
 
 	delete := topicer("delete")
-	_, err = rpc.HandleRPC(conn, codec, delete, entity.Name(), handler.Delete)
+	_, err = rpc.HandleRPC(conn, codec, delete, entity.Table(), handler.Delete)
 
 	if err != nil {
 		return err
 	}
 
 	search := topicer("search")
-	_, err = rpc.HandleRPC(conn, codec, search, entity.Name(), handler.Search)
+	_, err = rpc.HandleRPC(conn, codec, search, entity.Table(), handler.Search)
 
 	if err != nil {
 		return err
 	}
 
 	patch := topicer("patch")
-	_, err = rpc.HandleRPC(conn, codec, patch, entity.Name(), handler.Patch)
+	_, err = rpc.HandleRPC(conn, codec, patch, entity.Table(), handler.Patch)
 
 	if err != nil {
 		return err

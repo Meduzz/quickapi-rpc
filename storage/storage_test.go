@@ -371,12 +371,12 @@ func createTestData(db *gorm.DB) (*Test, error) {
 		Age:      defaultAge,
 	}
 
-	err := db.Table(Test{}.Name()).Save(data).Error
+	err := db.Table(Test{}.Table()).Save(data).Error
 
 	return data, err
 }
 
-func (t Test) Name() string {
+func (t Test) Table() string {
 	return "test"
 }
 
